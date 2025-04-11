@@ -1,0 +1,264 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .offerwall-inline tbody tr {
+        cursor: move;
+    }
+    .offerwall-inline .dragging {
+        opacity: 0.5;
+        background: #f0f0f0;
+    }
+    .offerwall-inline .order-field {
+        width: 50px;
+    }
+    .offerwall-inline .drag-handle {
+        padding: 0 10px;
+        cursor: move;
+    }
+    .offerwall-inline .offer-image {
+        margin-left: 10px;
+        height: 30px;
+        vertical-align: middle;
+        display: none;
+    }
+    .offerwall-inline .offer-image.error {
+        border: 1px solid red;
+    }
+    #image-preload-container {
+        display: none;
+    }
+</style>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+// Utility to debounce a function
+function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Create hidden container for preloaded images
+    const preloadContainer = document.createElement('div');
+    preloadContainer.id = 'image-preload-container';
+    document.body.appendChild(preloadContainer);
+
+    // Object to store preloaded image statuses
+    const preloadedImages = {};
+
+    // Fetch offer names and preload images
+    fetch('/api/offerwalls/get_offer_names/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.offer_names && Array.isArray(data.offer_names)) {
+                preloadOfferImages(data.offer_names);
+            }
+        })
+        .catch(error => console.error('Error fetching offer names:', error));
+
+    function preloadOfferImages(offerNames) {
+        offerNames.forEach(offerName => {
+            const imgSrc = `/media/offers/${offerName}.png`;
+            const img = new Image();
+            img.src = imgSrc;
+            img.className = 'preloaded-image';
+            img.dataset.offerName = offerName;
+
+            // Track image load status
+            img.onload = () => {
+                preloadedImages[offerName] = { loaded: true, element: img };
+            };
+            img.onerror = () => {
+                preloadedImages[offerName] = { loaded: false, element: img };
+            };
+
+            preloadContainer.appendChild(img);
+        });
+    }
+
+    const inlineContainers = document.querySelectorAll('.offerwall-inline tbody');
+    if (!inlineContainers.length) return;
+
+    inlineContainers.forEach(inlineContainer => {
+        removeEmptyInitialRow(inlineContainer);
+        setupDragAndDrop(inlineContainer);
+        setupImageHandling(inlineContainer);
+    });
+
+    // Handle form submission to remove empty rows
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function (e) {
+        inlineContainers.forEach(inlineContainer => {
+            removeEmptyRowsBeforeSubmit(inlineContainer);
+        });
+    });
+
+    document.addEventListener('formset:added', function(event) {
+        const newRow = event.target;
+        const tbody = newRow.closest('tbody');
+        setupImageHandling(tbody);
+        setNewOrderValue(newRow, tbody);
+    });
+
+    function removeEmptyInitialRow(inlineContainer) {
+        const rows = inlineContainer.querySelectorAll('tr');
+        rows.forEach(row => {
+            if (isRowEmpty(row)) {
+                row.remove();
+            }
+        });
+    }
+
+    function removeEmptyRowsBeforeSubmit(inlineContainer) {
+        const rows = inlineContainer.querySelectorAll('tr');
+        rows.forEach(row => {
+            if (isRowEmpty(row)) {
+                const deleteCheckbox = row.querySelector('input[name$="-DELETE"]');
+                if (deleteCheckbox) {
+                    deleteCheckbox.checked = true;
+                } else {
+                    row.remove();
+                }
+            }
+        });
+    }
+
+    function isRowEmpty(row) {
+        const inputs = row.querySelectorAll('input, select, textarea');
+        return Array.from(inputs).every(input => {
+            if (input.type === 'checkbox') return !input.checked;
+            return !input.value.trim();
+        });
+    }
+
+    function setupDragAndDrop(inlineContainer) {
+        updateOrderFields(inlineContainer);
+
+        let draggedRow = null;
+
+        inlineContainer.addEventListener('dragstart', (e) => {
+            const row = e.target.closest('tr');
+            if (!row) return;
+            draggedRow = row;
+            row.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        inlineContainer.addEventListener('dragend', () => {
+            if (draggedRow) {
+                draggedRow.classList.remove('dragging');
+                draggedRow = null;
+                updateOrderFields(inlineContainer);
+            }
+        });
+
+        inlineContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+
+        inlineContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const targetRow = e.target.closest('tr');
+            if (!targetRow || !draggedRow || targetRow === draggedRow) return;
+
+            const allRows = Array.from(inlineContainer.querySelectorAll('tr'));
+            const draggedIndex = allRows.indexOf(draggedRow);
+            const targetIndex = allRows.indexOf(targetRow);
+
+            if (draggedIndex < targetIndex) {
+                targetRow.after(draggedRow);
+            } else {
+                targetRow.before(draggedRow);
+            }
+
+            updateOrderFields(inlineContainer);
+        });
+
+        inlineContainer.querySelectorAll('tr').forEach(row => {
+            row.draggable = true;
+            const firstCell = row.querySelector('td');
+            if (firstCell) firstCell.classList.add('drag-handle');
+        });
+
+        function updateOrderFields(container) {
+            const rows = container.querySelectorAll('tr');
+            rows.forEach((row, index) => {
+                const orderInput = row.querySelector('.field-order input');
+                if (orderInput) orderInput.value = index + 1;
+            });
+        }
+
+        document.addEventListener('formset:removed', () => updateOrderFields(inlineContainer));
+    }
+
+    function setupImageHandling(inlineContainer) {
+        const $rows = $(inlineContainer).find('tr');
+        $rows.each(function () {
+            const $row = $(this);
+            const $select = $row.find('select[name*="-offer"]');
+            if (!$select.length) return;
+
+            // Check if image already exists to avoid duplicates
+            let $img = $row.find('.offer-image');
+            if (!$img.length) {
+                $img = $('<img>', {
+                    class: 'offer-image',
+                    alt: 'Offer preview'
+                }).appendTo($select.parent());
+            }
+
+            // Debounced image update function
+            const updateImage = debounce(function () {
+                const selectedOption = $select.find(':selected').text();
+                if (selectedOption && selectedOption !== '---------') {
+                    // Check if image is preloaded
+                    if (preloadedImages[selectedOption]) {
+                        const imageStatus = preloadedImages[selectedOption];
+                        if (imageStatus.loaded) {
+                            $img.attr('src', imageStatus.element.src)
+                                .removeClass('error')
+                                .show();
+                        } else {
+                            $img.hide()
+                                .addClass('error')
+                                .attr('title', 'Image not found');
+                        }
+                    } else {
+                        // Fallback to direct loading if not preloaded
+                        const imgSrc = `/media/offers/${selectedOption}.png`;
+                        $img.attr('src', imgSrc).show()
+                            .off('error').on('error', function () {
+                                $(this).hide().addClass('error').attr('title', 'Image not found');
+                            });
+                    }
+                } else {
+                    $img.hide().removeClass('error');
+                }
+            }, 200); // 200ms debounce
+
+            // Initial update and event listener
+            updateImage();
+            $select.off('change.image').on('change.image', updateImage);
+        });
+    }
+
+    function setNewOrderValue(newRow, inlineContainer) {
+        const newOrderInput = newRow.querySelector('.field-order input');
+        if (newOrderInput) newOrderInput.value = inlineContainer.querySelectorAll('tr').length - 2;
+    }
+});
+</script>
+
+{% endblock %}
+
+{% block inline_field_sets %}
+<div class="offerwall-inline">
+    {{ block.super }}
+</div>
+{% endblock %}

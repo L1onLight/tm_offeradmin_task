@@ -1,0 +1,26 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    › <a href="{% url 'admin:app_list' app_label='admin_panel' %}">Admin Panel</a>
+    › <a href="{% url 'admin:admin_panel_offer_changelist' %}">Offers</a>
+    › Upload CSV
+</div>
+{% endblock %}
+
+
+{% block content %}
+<div id="content-main">
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <p>First row must contain: <br>id,name,sum_to,term_to,percent_rate,status,url</p>
+
+        {{ form.as_p }}
+        <div class="submit-row">
+
+            <input type="submit" value="Upload CSV" class="default">
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    › <a href="{% url 'admin:app_list' app_label='admin_panel' %}">Admin_Panel</a>
+    › <a href="{% url 'admin:admin_panel_offer_changelist' %}">Offers</a>
+    › Upload Images
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label>
+            Choose an images:
+            <input type="file" name="images" accept=".png" multiple required>
+        </label>
+        <div class="submit-row">
+            <input type="submit" value="Upload images" class="default">
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+volumes:
+  static:
+
+services:
+
+  admin_panel:
+    build: .
+    volumes:
+      - ./static:/opt/static
+      - ./media:/opt/media
+    container_name: admin_panel
+    environment:
+      - DJANGO_SETTINGS_MODULE=offersAdmin.settings.base
+    command: /bin/sh -c "python3 manage.py collectstatic --no-input && python3 manage.py migrate --no-input && gunicorn --bind 0.0.0.0:8000 --workers 2 offersAdmin.wsgi:application"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  nginx:
+    build: ./nginx/conf
+    container_name: nginx
+    volumes:
+      - ./static:/opt/static
+      - ./media:/opt/media
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/ssl/default:/etc/ssl/default
+      - ./nginx/ssl/.well-known:/opt/offersAdmin/.well-known
+    ports:
+      - '443:443'
+      - '80:80'
+    depends_on:
+      - admin_panel
+    restart: unless-stopped

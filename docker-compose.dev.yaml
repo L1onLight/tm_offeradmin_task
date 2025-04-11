@@ -1,0 +1,49 @@
+volumes:
+  static:
+  pgdbdata: null
+
+services:
+  postgres:
+    image: postgres:alpine
+    container_name: pgdb
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=offersAdmin
+      - TZ=Europe/Kyiv
+    ports:
+      - '7432:5432'
+    volumes:
+      - pgdbdata:/var/lib/postgresql/data/
+    restart: always
+
+  admin_panel:
+    build: .
+    volumes:
+      - ./static:/opt/static
+      - ./offersAdmin:/opt/offersAdmin
+      - ./admin_panel:/opt/admin_panel
+    container_name: admin_panel
+    environment:
+      - DJANGO_SETTINGS_MODULE=offersAdmin.settings.development
+    command: /bin/sh -c "python3 manage.py collectstatic --no-input && python3 manage.py migrate --no-input && gunicorn --bind 0.0.0.0:8000 --reload --workers 2 offersAdmin.wsgi:application"
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  nginx:
+    build: ./nginx/conf
+    container_name: nginx
+    volumes:
+      - ./static:/opt/static
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/ssl/default:/etc/ssl/default
+      - ./nginx/ssl/.well-known:/opt/offersAdmin/.well-known
+    ports:
+      - '443:443'
+      - '80:80'
+    depends_on:
+      - admin_panel
+    restart: unless-stopped
